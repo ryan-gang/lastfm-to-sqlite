@@ -11,6 +11,13 @@ class Stats(TypedDict):
     playcount: str
 
 
+class StatsRow(TypedDict):
+    listeners: str
+    playcount: str
+    media_id: str
+    last_updated: str
+
+
 class BareArtist(TypedDict):
     name: str
     url: str
