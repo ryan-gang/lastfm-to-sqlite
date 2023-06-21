@@ -12,9 +12,10 @@ class Datastore:
             "similar_artists",
             "tracks",
             "albums",
-            "album_tracks_mapping",
+            "album_track_mappings",
             "stats",
             "tag_mappings",
+            "scrobbles",
         ]
         self.table_mapping: dict[str, Callable[[], None]] = {
             "tags": self.create_tags,
@@ -25,7 +26,8 @@ class Datastore:
             "similar_artists": self.create_similar_artists,
             "albums": self.create_albums,
             "tracks": self.create_tracks,
-            "album_tracks_mapping": self.create_album_tracks_mapping,
+            "album_track_mappings": self.create_album_track_mappings,
+            "scrobbles": self.create_scrobbles,
         }
 
     def assert_tables(self) -> bool:
@@ -141,23 +143,30 @@ class Datastore:
 
     def create_albums(self):
         self.db["albums"].create(  # type: ignore
-            {"id": str, "name": str, "url": str, "mbid": str, "bio": str, "artist_id": str},
+            {
+                "id": str,  # Hash
+                "name": str,
+                "url": str,
+                "mbid": str,
+                "bio": str,
+                "artist_id": str,  # Foreign key
+            },
             pk="id",
             not_null={"name", "url", "artist_id"},
             foreign_keys=["artist_id"],
         )
 
-    def create_album_tracks_mapping(self):
-        self.db["album_tracks_mapping"].create(  # type: ignore
-            {"id": str, "album_id": str, "track_id": str},
+    def create_album_track_mappings(self):
+        self.db["album_track_mappings"].create(  # type: ignore
+            {"id": str, "album_id": str, "track_id": str},  # Hash
             pk="id",
             not_null={"album_id", "track_id"},
         )
 
         self.db.add_foreign_keys(
             [
-                ("album_tracks_mapping", "album_id", "albums", "id"),
-                ("album_tracks_mapping", "track_id", "tracks", "id"),
+                ("album_track_mappings", "album_id", "albums", "id"),
+                ("album_track_mappings", "track_id", "tracks", "id"),
             ]
         )
 
@@ -174,4 +183,25 @@ class Datastore:
             pk="id",
             not_null={"name", "url", "artist_id"},
             foreign_keys=["artist_id"],
+        )
+
+    def create_scrobbles(self):
+        self.db["scrobbles"].create(  # type: ignore
+            {
+                "id": str,  # Hash
+                "album_id": str,
+                "track_id": str,
+                "artist_id": str,
+                "timestamp": str,
+            },
+            pk="id",
+            not_null={"album_id", "track_id", "artist_id", "timestamp"},
+        )
+
+        self.db.add_foreign_keys(
+            [
+                ("scrobbles", "album_id", "albums", "id"),
+                ("scrobbles", "track_id", "tracks", "id"),
+                ("scrobbles", "artist_id", "artists", "id"),
+            ]
         )

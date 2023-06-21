@@ -59,3 +59,21 @@ class Album(BareAlbum, Stats):
     tags: dict[str, list[Tag]]
     tracks: dict[str, list[BareTrack]]
     wiki: dict[str, str]
+
+
+class Scrobble(TypedDict):
+    artist: BareArtist
+    date: dict[str, str]
+    mbid: str
+    name: str
+    image: list[dict[str, str]]
+    url: str
+    streamable: str
+    album: dict[str, str]
+
+
+class ScrobbleRow(TypedDict):
+    artist_id: str
+    album_id: str
+    track_id: str
+    timestamp: str
