@@ -1,6 +1,7 @@
 import time
 from datetime import datetime
 from sqlite3 import IntegrityError
+from dataclass import ArtistRow
 
 from sqlite_utils import Database
 
@@ -31,7 +32,14 @@ class Scrobbles:
 
 
 class Artists:
-    def handle_artist(db: Database, self, artist: Artist):
+    def handle_artist(self, db: Database, artist: Artist):
+        # Check that artist is not already in db.
+        cursor = db.execute("select id from artists where name = ?", [artist["name"]])
+        results = cursor.fetchall()
+        cursor.close()
+
+        if results:
+            return
         # Write ArtistRow first.
         artist_row = {
             "name": artist["name"],
@@ -63,7 +71,7 @@ class Artists:
 
         db["stats"].insert(stats_row, hash_id="id", ignore=True)
 
-        Commons().handle_tags(artist["tags"]["tag"], artist_id)
+        Commons().handle_tags(db, artist["tags"]["tag"], artist_id)
 
 
 class Commons:
@@ -76,7 +84,7 @@ class Commons:
         ts = time.time()
         return datetime.fromtimestamp(ts).isoformat(timespec="seconds")
 
-    def handle_tags(self, tags: list[Tag], media_id: str):
+    def handle_tags(self, db: Database, tags: list[Tag], media_id: str):
         """
         Try to add tag into table, get PK, or if it exists just get PK.
         Then add media_id to tag_id mapping based on the 2nd param.
