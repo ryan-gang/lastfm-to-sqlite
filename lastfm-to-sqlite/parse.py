@@ -1,45 +1,44 @@
-import time
 from datetime import datetime
 from sqlite3 import IntegrityError
-from dataclass import ArtistRow
 
 from sqlite_utils import Database
 
 from dataclass import Artist, Scrobble, ScrobbleRow, StatsRow, Tag
 
-
-class Scrobbles:
-    def handle_artist():
-        pass
-
-    def handle_album():
-        pass
-
-    def handle_track():
-        pass
-
-    def scrobble_to_scrobble_row(self, scrobble: Scrobble) -> ScrobbleRow:
-        artist_name = scrobble["artist"]["name"]
-        album_name = scrobble["album"]["#text"]
-        track_name = scrobble["name"]
-
-        return {
-            "artist_id": handle_artist(),
-            "album_id": handle_album(),
-            "track_id": handle_track(),
-            "timestamp": Commons.isotimestamp_from_unixtimestamp(scrobble["date"]["uts"]),
-        }
+#
+# class Scrobbles:
+#     def handle_artist(self):
+#         pass
+#
+#     def handle_album(self):
+#         pass
+#
+#     def handle_track(self):
+#         pass
+#
+#     def scrobble_to_scrobble_row(self, scrobble: Scrobble) -> ScrobbleRow:
+#         artist_name = scrobble["artist"]["name"]
+#         album_name = scrobble["album"]["#text"]
+#         track_name = scrobble["name"]
+#
+#         return {
+#             "artist_id": self.handle_artist(),
+#             "album_id": self.handle_album(),
+#             "track_id": self.handle_track(),
+#             "timestamp": Commons.isotimestamp_from_unixtimestamp(scrobble["date"]["uts"]),
+#         }
 
 
 class Artists:
-    def handle_artist(self, db: Database, artist: Artist):
+    def handle_artist(self, db: Database, artist: Artist) -> str:
+        # Returns artist_id, from artists table.
         # Check that artist is not already in db.
         cursor = db.execute("select id from artists where name = ?", [artist["name"]])
         results = cursor.fetchall()
         cursor.close()
 
         if results:
-            return
+            return results[0][0]
         # Write ArtistRow first.
         artist_row = {
             "name": artist["name"],
@@ -49,7 +48,7 @@ class Artists:
         if "mbid" in artist:
             artist_row["mbid"] = artist["mbid"]
 
-        artist_id = db["artists"].insert(artist_row, hash_id="id", ignore=True).last_pk
+        artist_id: str = db["artists"].insert(artist_row, hash_id="id").last_pk
 
         # Write tmp_similar_artist.
         for similar in artist["similar"]["artist"]:
@@ -71,7 +70,10 @@ class Artists:
 
         db["stats"].insert(stats_row, hash_id="id", ignore=True)
 
-        Commons().handle_tags(db, artist["tags"]["tag"], artist_id)
+        tags = artist["tags"]["tag"]
+        # tags is a list of dict, where each dict has name and url keys.
+        Commons().handle_tags_and_tag_mappings(db, tags, artist_id)
+        return artist_id
 
 
 class Commons:
@@ -81,10 +83,10 @@ class Commons:
 
     @staticmethod
     def current_isotimestamp() -> str:
-        ts = time.time()
-        return datetime.fromtimestamp(ts).isoformat(timespec="seconds")
+        return datetime.now().isoformat() + 'Z'
 
-    def handle_tags(self, db: Database, tags: list[Tag], media_id: str):
+    @staticmethod
+    def handle_tags_and_tag_mappings(db: Database, tags: list[dict[str, str]], media_id: str):
         """
         Try to add tag into table, get PK, or if it exists just get PK.
         Then add media_id to tag_id mapping based on the 2nd param.

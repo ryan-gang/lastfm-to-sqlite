@@ -15,19 +15,16 @@ class StatsRow(TypedDict):
     listeners: str
     playcount: str
     media_id: str
-    last_updated: str
+    last_updated: str  # Timestamp should be in this format : 2018-03-18T15:52:10.000Z
 
 
 class BareArtist(TypedDict):
     name: str
     url: str
-    image: list[dict[str, str]]
     mbid: Optional[str]
 
 
 class Artist(BareArtist):
-    streamable: str  # ?
-    ontour: str  # Not required
     similar: dict[str, list[BareArtist]]
     stats: Stats
     tags: list[Tag]
@@ -52,7 +49,6 @@ class BareAlbum(TypedDict):
     artist: str
     title: str
     url: str
-    image: list[dict[str, str]]
     mbid: Optional[str]
 
 
@@ -73,7 +69,6 @@ class Scrobble(TypedDict):
     date: dict[str, str]
     mbid: str
     name: str
-    image: list[dict[str, str]]
     url: str
     streamable: str
     album: dict[str, str]
