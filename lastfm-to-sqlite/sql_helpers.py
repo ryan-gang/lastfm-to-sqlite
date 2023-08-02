@@ -61,9 +61,11 @@ class Datastore:
                 "listeners": str,  # total listeners
                 "playcount": str,  # total plays
                 "last_updated": str,  # timestamp when updated
+                "is_loved": bool  # bool to denote if track is loved or not
             },
             pk="id",
             not_null={"media_id", "listeners", "playcount"},
+            defaults={"is_loved": False}
         )
 
         self.db.add_foreign_keys(
@@ -178,7 +180,8 @@ class Datastore:
                 "url": str,
                 "mbid": str,
                 "duration": str,
-                "artist_id": str,
+                "bio": str,
+                "artist_id": str
             },
             pk="id",
             not_null={"name", "url", "artist_id"},

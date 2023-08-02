@@ -47,13 +47,14 @@ class BareTrack(TypedDict):
 
 class BareAlbum(TypedDict):
     artist: str
-    title: str
+    name: str
     url: str
     mbid: Optional[str]
 
 
 class Track(BareTrack, Stats):
     album: BareAlbum
+    mbid: str
     toptags: dict[str, list[Tag]]
     wiki: dict[str, str]
 
