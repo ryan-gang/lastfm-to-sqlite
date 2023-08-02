@@ -153,10 +153,17 @@ class Albums:
                     track, "artist", "name"
                 )
                 track_data = self.api.get_track_data(artist_name, track_name)
-                track_id = tracks_obj.handle_track(track_data["track"], track_is_loved=0)
+                if "error" in track_data:  # TODO Add proper handling of api failure
+                    print(track_data)
+                    continue
+                track_id = tracks_obj.handle_track(
+                    track_data["track"], track_is_loved=0
+                )
 
             mapping_row = {"album_id": album_id, "track_id": track_id}
-            self.db["album_track_mappings"].insert(mapping_row, hash_id="id")
+            self.db["album_track_mappings"].insert(
+                mapping_row, hash_id="id", ignore=True
+            )
 
         return album_id
 
@@ -250,6 +257,8 @@ class Scrobbles:
         album = Albums(self.db, self.api)
         track = Tracks(self.db, self.api)
 
+        # TODO add search_on_db before all api calls
+
         artist_name, artist_url, artist_mbid = (
             dict_fetch(scrobble, "artist", "name"),
             dict_fetch(scrobble, "artist", "url"),
@@ -269,10 +278,14 @@ class Scrobbles:
             dict_fetch(scrobble, "url"),
             dict_fetch(scrobble, "mbid"),
         )
-        track_is_loved = int(dict_fetch(scrobble, "loved"))
-        track_data = self.api.get_track_data(
-            artist_name, track_name, mbid=track_mbid
-        )
+
+        _ = dict_fetch(scrobble, "loved")
+        if _ == "":
+            track_is_loved = 0
+        else:
+            track_is_loved = int(_)
+
+        track_data = self.api.get_track_data(artist_name, track_name, mbid=track_mbid)
         track_id = track.handle_track(track_data["track"], track_is_loved)
 
         timestamp = Commons().isotimestamp_from_unixtimestamp(scrobble["date"]["uts"])
