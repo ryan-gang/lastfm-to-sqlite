@@ -162,6 +162,70 @@ class Tracks:
         return track_id
 
 
+class Albums:
+    def __init__(self, db: Database):
+        self.db = db
+
+    def handle_album(self, album: Album):
+        # Handles the album's entire data, and returns the album_id from the db.
+        # Also adds the album : track mappings.
+        pass
+
+    def handle_album_without_track_mappings(self, album: Album) -> str:
+        # Handles the album's core data, and returns the album_id from the db.
+        cursor = self.db.execute(
+            "select id from albums where name = ?", [album["name"]]
+        )
+        results = cursor.fetchall()
+        cursor.close()
+
+        if results:
+            if len(results) > 1:
+                # TODO Possible issue ?
+                print(f"Multiple tracks found with the same name : {album['name']}")
+            return results[0][0]
+
+        # Get artist_id
+        artist_obj = Artists(self.db)
+        api = API(
+            api_key="65fb65f79427db8ce5626269c0d7fa2b"
+        )  # TODO REMOVE HARDCODED VAL
+
+        _, d_artists_name = artist_obj.get_all_artists_dict()
+        artist_name = dict_fetch(album, "artist")
+        if artist_name in d_artists_name:
+            artist_id, _name, _url, _mbid = d_artists_name[artist_name]
+        else:
+            artist_data = api.get_artist_data(artist_name)
+            artist_id = artist_obj.handle_artist(artist_data["artist"])
+
+        # Write TrackRow first.
+        album_row = {
+            "name": dict_fetch(album, "name"),
+            "url": dict_fetch(album, "url"),
+            "mbid": dict_fetch(album, "mbid"),
+            "bio": dict_fetch(album, "wiki", "content"),
+            "artist_id": artist_id,
+        }
+
+        album_id: str = self.db["albums"].insert(album_row, hash_id="id").last_pk
+
+        # Write stats.
+        stats_row: StatsRow = {
+            "media_id": album_id,
+            "listeners": dict_fetch(album, "listeners"),
+            "playcount": dict_fetch(album, "playcount"),
+            "last_updated": Commons().current_isotimestamp(),
+        }
+        self.db["stats"].insert(stats_row, hash_id="id", ignore=True)
+
+        # Write tags.
+        tags = dict_fetch(album, "tags", "tag")
+        # tags is a list of dict, where each dict has name and url keys.
+        Commons().handle_tags_and_tag_mappings(self.db, tags, album_id)
+        return album_id
+
+
 class Commons:
     @staticmethod
     def isotimestamp_from_unixtimestamp(ts: str) -> str:
