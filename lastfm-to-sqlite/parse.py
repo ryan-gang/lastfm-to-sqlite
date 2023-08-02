@@ -1,9 +1,11 @@
 from datetime import datetime
 from sqlite3 import IntegrityError
-
+from typing import Any
 from sqlite_utils import Database
+from api import API
+from support import dict_fetch
+from dataclass import Artist, StatsRow, Track, Album
 
-from dataclass import Artist, Scrobble, ScrobbleRow, StatsRow, Tag
 
 #
 # class Scrobbles:
@@ -30,10 +32,32 @@ from dataclass import Artist, Scrobble, ScrobbleRow, StatsRow, Tag
 
 
 class Artists:
-    def handle_artist(self, db: Database, artist: Artist) -> str:
+    def __init__(self, db: Database):
+        self.db = db
+
+    def get_all_artists_dict(self) -> list[dict[Any, list[Any]]]:
+        """
+        Returns 2 dicts, of key value mapping.
+        Where value for both dicts is artist's _id, _name, _url, _mbid.
+        And the keys are mbid, name respectively.
+        """
+        d_artists_mbid = {}
+        d_artists_name = {}
+
+        for row in self.db["artists"].rows:
+            _id, _name, _url, _mbid = (
+                data := [row["id"], row["name"], row["url"], row["mbid"]]
+            )
+            d_artists_mbid[_mbid] = data
+            d_artists_name[_name] = data
+        return [d_artists_mbid, d_artists_name]
+
+    def handle_artist(self, artist: Artist) -> str:
         # Returns artist_id, from artists table.
         # Check that artist is not already in db.
-        cursor = db.execute("select id from artists where name = ?", [artist["name"]])
+        cursor = self.db.execute(
+            "select id from artists where name = ?", [artist["name"]]
+        )
         results = cursor.fetchall()
         cursor.close()
 
@@ -41,38 +65,39 @@ class Artists:
             return results[0][0]
         # Write ArtistRow first.
         artist_row = {
-            "name": artist["name"],
-            "url": artist["url"],
-            "bio": artist["bio"]["content"],
+            "name": dict_fetch(artist, "name"),
+            "url": dict_fetch(artist, "url"),
+            "mbid": dict_fetch(artist, "mbid"),
+            "bio": dict_fetch(artist, "bio", "content"),
         }
-        if "mbid" in artist:
-            artist_row["mbid"] = artist["mbid"]
 
-        artist_id: str = db["artists"].insert(artist_row, hash_id="id").last_pk
+        artist_id: str = self.db["artists"].insert(artist_row, hash_id="id").last_pk
 
         # Write tmp_similar_artist.
         for similar in artist["similar"]["artist"]:
             tmp_similar_artist_row = {
                 "artist_id": artist_id,
-                "similar_artist_name": similar["name"],
-                "similar_artist_url": similar["url"],
+                "similar_artist_name": dict_fetch(similar, "name"),
+                "similar_artist_url": dict_fetch(similar, "url"),
             }
-            db["similar_artists_tmp"].insert(tmp_similar_artist_row, hash_id="id", ignore=True)
+            self.db["similar_artists_tmp"].insert(
+                tmp_similar_artist_row, hash_id="id", ignore=True
+            )
 
         # Write stats.
         stats = artist["stats"]
         stats_row: StatsRow = {
             "media_id": artist_id,
-            "listeners": stats["listeners"],
-            "playcount": stats["playcount"],
+            "listeners": dict_fetch(stats, "listeners"),
+            "playcount": dict_fetch(stats, "playcount"),
             "last_updated": Commons().current_isotimestamp(),
         }
 
-        db["stats"].insert(stats_row, hash_id="id", ignore=True)
+        self.db["stats"].insert(stats_row, hash_id="id", ignore=True)
 
-        tags = artist["tags"]["tag"]
+        tags = dict_fetch(artist, "tags", "tag")
         # tags is a list of dict, where each dict has name and url keys.
-        Commons().handle_tags_and_tag_mappings(db, tags, artist_id)
+        Commons().handle_tags_and_tag_mappings(self.db, tags, artist_id)
         return artist_id
 
 
@@ -83,10 +108,12 @@ class Commons:
 
     @staticmethod
     def current_isotimestamp() -> str:
-        return datetime.now().isoformat() + 'Z'
+        return datetime.now().isoformat() + "Z"
 
     @staticmethod
-    def handle_tags_and_tag_mappings(db: Database, tags: list[dict[str, str]], media_id: str):
+    def handle_tags_and_tag_mappings(
+        db: Database, tags: list[dict[str, str]], media_id: str
+    ):
         """
         Try to add tag into table, get PK, or if it exists just get PK.
         Then add media_id to tag_id mapping based on the 2nd param.
