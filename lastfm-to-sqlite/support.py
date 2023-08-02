@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 
 
 def dict_fetch(data: dict[Any, Any], *args: str) -> Any:
@@ -11,3 +11,8 @@ def dict_fetch(data: dict[Any, Any], *args: str) -> Any:
         data = ""
 
     return data
+
+
+def valid(parameter: Optional[str]) -> bool:
+    # Check that a parameter is valid.
+    return (parameter is not None) and (parameter != "") and (parameter != "None")
