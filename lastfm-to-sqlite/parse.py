@@ -139,7 +139,7 @@ class Tracks:
             "name": dict_fetch(track, "name"),
             "url": dict_fetch(track, "url"),
             "mbid": dict_fetch(track, "mbid"),
-            "duration": dict_fetch(track, "duration") / 1000,  # Will be in milliseconds
+            "duration": int(dict_fetch(track, "duration")) // 1000,  # Will be in milliseconds
             "bio": dict_fetch(track, "wiki", "content"),
             "artist_id": artist_id,
         }
@@ -189,7 +189,7 @@ class Albums:
             else:
                 track_name, artist_name = dict_fetch(track, "name"), dict_fetch(track, "artist", "name")
                 track_data = self.api.get_track_data(artist_name, track_name)
-                track_id = tracks_obj.handle_track(track_data)
+                track_id = tracks_obj.handle_track(track_data["track"])
 
             mapping_row = {
                 "album_id": album_id,
