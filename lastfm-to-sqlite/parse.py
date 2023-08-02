@@ -1,34 +1,12 @@
+from datetime import datetime, timedelta
 from sqlite3 import IntegrityError
 from typing import Any
+
 from sqlite_utils import Database
+
 from api import API
-from support import dict_fetch
 from dataclass import Artist, StatsRow, Track, Album, Scrobble
-from datetime import datetime, timedelta
-
-
-#
-# class Scrobbles:
-#     def handle_artist(self):
-#         pass
-#
-#     def handle_album(self):
-#         pass
-#
-#     def handle_track(self):
-#         pass
-#
-#     def scrobble_to_scrobble_row(self, scrobble: Scrobble) -> ScrobbleRow:
-#         artist_name = scrobble["artist"]["name"]
-#         album_name = scrobble["album"]["#text"]
-#         track_name = scrobble["name"]
-#
-#         return {
-#             "artist_id": self.handle_artist(),
-#             "album_id": self.handle_album(),
-#             "track_id": self.handle_track(),
-#             "timestamp": Commons.isotimestamp_from_unixtimestamp(scrobble["date"]["uts"]),
-#         }
+from support import dict_fetch, search_on_db
 
 
 class Artists:
@@ -55,14 +33,10 @@ class Artists:
     def handle_artist(self, artist: Artist) -> str:
         # Returns artist_id, from artists table.
         # Check that artist is not already in db.
-        cursor = self.db.execute(
-            "select id from artists where name = ?", [artist["name"]]
-        )
-        results = cursor.fetchall()
-        cursor.close()
+        search_result = search_on_db(self.db, "artists", "name", artist["name"], "id")
+        if search_result:
+            return search_result
 
-        if results:
-            return results[0][0]
         # Write ArtistRow first.
         artist_row = {
             "name": dict_fetch(artist, "name"),
@@ -109,17 +83,9 @@ class Tracks:
     def handle_track(self, track: Track, track_is_loved: int) -> str:
         # Returns track_id, from tracks table.
         # Check that track is not already in db.
-        cursor = self.db.execute(
-            "select id from tracks where name = ?", [track["name"]]
-        )
-        results = cursor.fetchall()
-        cursor.close()
-
-        if results:
-            if len(results) > 1:
-                # TODO Possible issue ?
-                print(f"Multiple tracks found with the same name : {track['name']}")
-            return results[0][0]
+        search_result = search_on_db(self.db, "tracks", "name", track["name"], "id")
+        if search_result:
+            return search_result
 
         # Get artist_id
         artist_obj = Artists(self.db)
@@ -179,17 +145,9 @@ class Albums:
         tracks_obj = Tracks(self.db, self.api)
 
         for track in dict_fetch(album, "tracks", "track"):
-            cursor = self.db.execute(
-                "select id from tracks where name = ?", [track["name"]]
-            )
-            results = cursor.fetchall()
-            cursor.close()
-
-            if results:
-                if len(results) > 1:
-                    # TODO Possible issue ?
-                    print(f"Multiple tracks found with the same name : {track['name']}")
-                track_id = results[0][0]
+            search_result = search_on_db(self.db, "tracks", "name", track["name"], "id")
+            if search_result:
+                track_id = search_result
             else:
                 track_name, artist_name = dict_fetch(track, "name"), dict_fetch(
                     track, "artist", "name"
@@ -204,17 +162,9 @@ class Albums:
 
     def handle_album_without_track_mappings(self, album: Album) -> str:
         # Handles the album's core data, and returns the album_id from the db.
-        cursor = self.db.execute(
-            "select id from albums where name = ?", [album["name"]]
-        )
-        results = cursor.fetchall()
-        cursor.close()
-
-        if results:
-            if len(results) > 1:
-                # TODO Possible issue ?
-                print(f"Multiple tracks found with the same name : {album['name']}")
-            return results[0][0]
+        search_result = search_on_db(self.db, "albums", "name", album["name"], "id")
+        if search_result:
+            return search_result
 
         # Get artist_id
         artist_obj = Artists(self.db)
@@ -282,10 +232,8 @@ class Commons:
             try:  # Try to insert row get PK.
                 tag_id = db["tags"].insert(tag, hash_id="id").last_pk
             except IntegrityError:  # Except if it already exists, just get PK.
-                cursor = db.execute("select id from tags where name = ?", [tag["name"]])
-                results = cursor.fetchall()
-                cursor.close()
-                tag_id: str = results[0][0]
+                search_result = search_on_db(db, "tags", "name", tag["name"], "id")
+                tag_id: str = search_result
 
             tag_mapping_row = {"media_id": media_id, "tag_id": tag_id}
 
@@ -313,9 +261,7 @@ class Scrobbles:
         album_name, album_mbid = dict_fetch(scrobble, "album", "#text"), dict_fetch(
             scrobble, "album", "mbid"
         )
-        album_data = self.api.get_album_data(
-            artist_name, album_name, mbid=album_mbid
-        )
+        album_data = self.api.get_album_data(artist_name, album_name, mbid=album_mbid)
         album_id = album.handle_album(album_data["album"])
 
         track_name, track_url, track_mbid = (
