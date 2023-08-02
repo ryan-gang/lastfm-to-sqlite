@@ -1,10 +1,10 @@
-from datetime import datetime
 from sqlite3 import IntegrityError
 from typing import Any
 from sqlite_utils import Database
 from api import API
 from support import dict_fetch
-from dataclass import Artist, StatsRow, Track, Album
+from dataclass import Artist, StatsRow, Track, Album, Scrobble
+from datetime import datetime, timedelta
 
 
 #
@@ -106,10 +106,12 @@ class Tracks:
         self.db = db
         self.api = api
 
-    def handle_track(self, track: Track) -> str:
+    def handle_track(self, track: Track, track_is_loved: int) -> str:
         # Returns track_id, from tracks table.
         # Check that track is not already in db.
-        cursor = self.db.execute("select id from tracks where name = ?", [track["name"]])
+        cursor = self.db.execute(
+            "select id from tracks where name = ?", [track["name"]]
+        )
         results = cursor.fetchall()
         cursor.close()
 
@@ -139,7 +141,8 @@ class Tracks:
             "name": dict_fetch(track, "name"),
             "url": dict_fetch(track, "url"),
             "mbid": dict_fetch(track, "mbid"),
-            "duration": int(dict_fetch(track, "duration")) // 1000,  # Will be in milliseconds
+            "duration": int(dict_fetch(track, "duration")) // 1000,
+            # Will be in milliseconds
             "bio": dict_fetch(track, "wiki", "content"),
             "artist_id": artist_id,
         }
@@ -147,10 +150,11 @@ class Tracks:
         track_id: str = self.db["tracks"].insert(track_row, hash_id="id").last_pk
 
         # Write stats.
-        stats_row: StatsRow = {
+        stats_row = {
             "media_id": track_id,
             "listeners": dict_fetch(track, "listeners"),
             "playcount": dict_fetch(track, "playcount"),
+            "is_loved": track_is_loved,
             "last_updated": Commons().current_isotimestamp(),
         }
         self.db["stats"].insert(stats_row, hash_id="id", ignore=True)
@@ -168,7 +172,7 @@ class Albums:
         self.db = db
         self.api = api
 
-    def handle_album(self, album: Album):
+    def handle_album(self, album: Album) -> str:
         # Handles the album's entire data, and returns the album_id from the db.
         # Also adds the album : track mappings.
         album_id = self.handle_album_without_track_mappings(album)
@@ -187,15 +191,16 @@ class Albums:
                     print(f"Multiple tracks found with the same name : {track['name']}")
                 track_id = results[0][0]
             else:
-                track_name, artist_name = dict_fetch(track, "name"), dict_fetch(track, "artist", "name")
+                track_name, artist_name = dict_fetch(track, "name"), dict_fetch(
+                    track, "artist", "name"
+                )
                 track_data = self.api.get_track_data(artist_name, track_name)
-                track_id = tracks_obj.handle_track(track_data["track"])
+                track_id = tracks_obj.handle_track(track_data["track"], track_is_loved=0)
 
-            mapping_row = {
-                "album_id": album_id,
-                "track_id": track_id
-            }
+            mapping_row = {"album_id": album_id, "track_id": track_id}
             self.db["album_track_mappings"].insert(mapping_row, hash_id="id")
+
+        return album_id
 
     def handle_album_without_track_mappings(self, album: Album) -> str:
         # Handles the album's core data, and returns the album_id from the db.
@@ -252,7 +257,14 @@ class Albums:
 class Commons:
     @staticmethod
     def isotimestamp_from_unixtimestamp(ts: str) -> str:
-        return datetime.utcfromtimestamp(int(ts)).isoformat()
+        # Get the UTC datetime from the unix timestamp
+        utc_datetime = datetime.utcfromtimestamp(int(ts))
+        # Define the GMT+5:30 offset time
+        offset = timedelta(hours=5, minutes=30)
+        # Add the offset to the UTC datetime
+        gmt_datetime = utc_datetime + offset
+        # Return the ISO formatted string of the GMT+5:30 datetime
+        return gmt_datetime.isoformat()
 
     @staticmethod
     def current_isotimestamp() -> str:
@@ -278,3 +290,52 @@ class Commons:
             tag_mapping_row = {"media_id": media_id, "tag_id": tag_id}
 
             db["tag_mappings"].insert(tag_mapping_row, hash_id="id", ignore=True)
+
+
+class Scrobbles:
+    def __init__(self, db: Database, api: API):
+        self.db = db
+        self.api = api
+
+    def handle_scrobble(self, scrobble: Scrobble) -> None:
+        artist = Artists(self.db)
+        album = Albums(self.db, self.api)
+        track = Tracks(self.db, self.api)
+
+        artist_name, artist_url, artist_mbid = (
+            dict_fetch(scrobble, "artist", "name"),
+            dict_fetch(scrobble, "artist", "url"),
+            dict_fetch(scrobble, "artist", "mbid"),
+        )
+        artist_data = self.api.get_artist_data(artist_name, mbid=artist_mbid)
+        artist_id = artist.handle_artist(artist_data["artist"])
+
+        album_name, album_mbid = dict_fetch(scrobble, "album", "#text"), dict_fetch(
+            scrobble, "album", "mbid"
+        )
+        album_data = self.api.get_album_data(
+            artist_name, album_name, mbid=album_mbid
+        )
+        album_id = album.handle_album(album_data["album"])
+
+        track_name, track_url, track_mbid = (
+            dict_fetch(scrobble, "name"),
+            dict_fetch(scrobble, "url"),
+            dict_fetch(scrobble, "mbid"),
+        )
+        track_is_loved = int(dict_fetch(scrobble, "loved"))
+        track_data = self.api.get_track_data(
+            artist_name, track_name, mbid=track_mbid
+        )
+        track_id = track.handle_track(track_data["track"], track_is_loved)
+
+        timestamp = Commons().isotimestamp_from_unixtimestamp(scrobble["date"]["uts"])
+
+        scrobble_row = {
+            "album_id": album_id,
+            "track_id": track_id,
+            "artist_id": artist_id,
+            "timestamp": timestamp,
+        }
+
+        self.db["scrobbles"].insert(scrobble_row, hash_id="id", ignore=True)
