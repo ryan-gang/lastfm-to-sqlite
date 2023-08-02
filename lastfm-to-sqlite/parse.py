@@ -101,6 +101,67 @@ class Artists:
         return artist_id
 
 
+class Tracks:
+    def handle_track(self, db: Database, track: Track) -> str:
+        # Returns track_id, from tracks table.
+        # Check that track is not already in db.
+        cursor = db.execute("select id from tracks where name = ?", [track["name"]])
+        results = cursor.fetchall()
+        cursor.close()
+
+        if results:
+            if len(results) > 1:
+                # TODO Possible issue ?
+                print(f"Multiple tracks found with the same name : {track['name']}")
+            return results[0][0]
+
+        # Get artist_id
+        artist_obj = Artists(db)
+        api = API(
+            api_key="65fb65f79427db8ce5626269c0d7fa2b"
+        )  # TODO REMOVE HARDCODED VAL
+
+        d_artists_mbid, d_artists_name = artist_obj.get_all_artists_dict()
+        artist_mbid, artist_name = dict_fetch(track, "artist", "mbid"), dict_fetch(
+            track, "artist", "name"
+        )
+        if artist_mbid in d_artists_mbid:
+            artist_id, _name, _url, _mbid = d_artists_mbid[artist_mbid]
+        elif artist_name in d_artists_name:
+            artist_id, _name, _url, _mbid = d_artists_name[artist_name]
+        else:
+            artist_data = api.get_artist_data(artist_name)
+            artist_id = artist_obj.handle_artist(artist_data["artist"])
+
+        # Write TrackRow first.
+        track_row = {
+            "name": dict_fetch(track, "name"),
+            "url": dict_fetch(track, "url"),
+            "mbid": dict_fetch(track, "mbid"),
+            "duration": dict_fetch(track, "duration") / 1000,  # Will be in milliseconds
+            "bio": dict_fetch(track, "wiki", "content"),
+            "artist_id": artist_id,
+        }
+
+        track_id: str = db["tracks"].insert(track_row, hash_id="id").last_pk
+
+        # Write stats.
+        stats_row: StatsRow = {
+            "media_id": track_id,
+            "listeners": dict_fetch(track, "listeners"),
+            "playcount": dict_fetch(track, "playcount"),
+            "last_updated": Commons().current_isotimestamp(),
+        }
+        db["stats"].insert(stats_row, hash_id="id", ignore=True)
+
+        # Write tags.
+        tags = dict_fetch(track, "toptags", "tag")
+        # tags is a list of dict, where each dict has name and url keys.
+        Commons().handle_tags_and_tag_mappings(db, tags, track_id)
+
+        return track_id
+
+
 class Commons:
     @staticmethod
     def isotimestamp_from_unixtimestamp(ts: str) -> str:
