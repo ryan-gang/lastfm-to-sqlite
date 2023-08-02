@@ -102,10 +102,14 @@ class Artists:
 
 
 class Tracks:
-    def handle_track(self, db: Database, track: Track) -> str:
+    def __init__(self, db: Database, api: API):
+        self.db = db
+        self.api = api
+
+    def handle_track(self, track: Track) -> str:
         # Returns track_id, from tracks table.
         # Check that track is not already in db.
-        cursor = db.execute("select id from tracks where name = ?", [track["name"]])
+        cursor = self.db.execute("select id from tracks where name = ?", [track["name"]])
         results = cursor.fetchall()
         cursor.close()
 
@@ -116,10 +120,7 @@ class Tracks:
             return results[0][0]
 
         # Get artist_id
-        artist_obj = Artists(db)
-        api = API(
-            api_key="65fb65f79427db8ce5626269c0d7fa2b"
-        )  # TODO REMOVE HARDCODED VAL
+        artist_obj = Artists(self.db)
 
         d_artists_mbid, d_artists_name = artist_obj.get_all_artists_dict()
         artist_mbid, artist_name = dict_fetch(track, "artist", "mbid"), dict_fetch(
@@ -130,7 +131,7 @@ class Tracks:
         elif artist_name in d_artists_name:
             artist_id, _name, _url, _mbid = d_artists_name[artist_name]
         else:
-            artist_data = api.get_artist_data(artist_name)
+            artist_data = self.api.get_artist_data(artist_name)
             artist_id = artist_obj.handle_artist(artist_data["artist"])
 
         # Write TrackRow first.
@@ -143,7 +144,7 @@ class Tracks:
             "artist_id": artist_id,
         }
 
-        track_id: str = db["tracks"].insert(track_row, hash_id="id").last_pk
+        track_id: str = self.db["tracks"].insert(track_row, hash_id="id").last_pk
 
         # Write stats.
         stats_row: StatsRow = {
@@ -152,24 +153,49 @@ class Tracks:
             "playcount": dict_fetch(track, "playcount"),
             "last_updated": Commons().current_isotimestamp(),
         }
-        db["stats"].insert(stats_row, hash_id="id", ignore=True)
+        self.db["stats"].insert(stats_row, hash_id="id", ignore=True)
 
         # Write tags.
         tags = dict_fetch(track, "toptags", "tag")
         # tags is a list of dict, where each dict has name and url keys.
-        Commons().handle_tags_and_tag_mappings(db, tags, track_id)
+        Commons().handle_tags_and_tag_mappings(self.db, tags, track_id)
 
         return track_id
 
 
 class Albums:
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, api: API):
         self.db = db
+        self.api = api
 
     def handle_album(self, album: Album):
         # Handles the album's entire data, and returns the album_id from the db.
         # Also adds the album : track mappings.
-        pass
+        album_id = self.handle_album_without_track_mappings(album)
+        tracks_obj = Tracks(self.db, self.api)
+
+        for track in dict_fetch(album, "tracks", "track"):
+            cursor = self.db.execute(
+                "select id from tracks where name = ?", [track["name"]]
+            )
+            results = cursor.fetchall()
+            cursor.close()
+
+            if results:
+                if len(results) > 1:
+                    # TODO Possible issue ?
+                    print(f"Multiple tracks found with the same name : {track['name']}")
+                track_id = results[0][0]
+            else:
+                track_name, artist_name = dict_fetch(track, "name"), dict_fetch(track, "artist", "name")
+                track_data = self.api.get_track_data(artist_name, track_name)
+                track_id = tracks_obj.handle_track(track_data)
+
+            mapping_row = {
+                "album_id": album_id,
+                "track_id": track_id
+            }
+            self.db["album_track_mappings"].insert(mapping_row, hash_id="id")
 
     def handle_album_without_track_mappings(self, album: Album) -> str:
         # Handles the album's core data, and returns the album_id from the db.
@@ -187,16 +213,13 @@ class Albums:
 
         # Get artist_id
         artist_obj = Artists(self.db)
-        api = API(
-            api_key="65fb65f79427db8ce5626269c0d7fa2b"
-        )  # TODO REMOVE HARDCODED VAL
 
         _, d_artists_name = artist_obj.get_all_artists_dict()
         artist_name = dict_fetch(album, "artist")
         if artist_name in d_artists_name:
             artist_id, _name, _url, _mbid = d_artists_name[artist_name]
         else:
-            artist_data = api.get_artist_data(artist_name)
+            artist_data = self.api.get_artist_data(artist_name)
             artist_id = artist_obj.handle_artist(artist_data["artist"])
 
         # Write TrackRow first.
