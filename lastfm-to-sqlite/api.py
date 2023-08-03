@@ -1,12 +1,20 @@
-import requests
 import json
+import logging
 from typing import Any, Optional
+
+import requests
+
+from exceptions import InvalidAPIResponseException
+from support import valid
 
 HOST_NAME = r"https://ws.audioscrobbler.com/2.0/"
 MAXSIZE = 1000
 
 
 class API:
+    logger = logging.getLogger("requests")
+    logging.basicConfig(filename="requests.log", level=logging.INFO)
+
     def __init__(self, api_key: str) -> None:
         self.API_KEY = api_key
         self.headers = {
@@ -23,10 +31,11 @@ class API:
 
         if r.status_code == 200:
             data = r.content.decode()
+            self.logger.info(data)
             return json.loads(data)
         else:
-            raise Exception(
-                f"An error as occurred with code: {r.status_code} while fetching {URL}."
+            raise InvalidAPIResponseException(
+                f"An error has occurred with code: {r.status_code} while fetching {URL}."
             )
 
     def get_scrobble_data(
@@ -77,12 +86,19 @@ class API:
         _format = "json"
         _method = "track.getInfo"
 
-        if mbid is None or mbid == "":
+        if valid(mbid):
+            URL = f"{HOST_NAME}?api_key={self.API_KEY}&format={_format}&method={_method}&mbid={mbid}"
+            out = self.get_resource(URL)
+            if "error" not in out:
+                return out
+
+        if valid(artist_name) and valid(track_name):
             URL = (
                 f"{HOST_NAME}?api_key={self.API_KEY}&format={_format}&method={_method}&artist={artist_name}"
                 f"&track={track_name}"
             )
-        else:
-            URL = f"{HOST_NAME}?api_key={self.API_KEY}&format={_format}&method={_method}&mbid={mbid}"
+            out = self.get_resource(URL)
+            if "error" not in out:
+                return out
 
-        return self.get_resource(URL)
+        return {}
