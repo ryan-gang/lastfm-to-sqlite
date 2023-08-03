@@ -23,6 +23,7 @@ class Artists:
         If found it returns the found id.
         Else it polls the last.fm api to fetch the artist data,
         ingests into db, and returns the pk.
+        If API returns invalid data, throws `InvalidAPIResponseException`.
         """
         if valid(artist_name) and valid(
             a_id := self.datalayer.search_on_table("artists", "name", artist_name, "id")
@@ -248,45 +249,6 @@ class Albums:
         return album_id
 
 
-class Commons:
-    @staticmethod
-    def isotimestamp_from_unixtimestamp(ts: str) -> str:
-        # Get the UTC datetime from the unix timestamp
-        utc_datetime = datetime.utcfromtimestamp(int(ts))
-        # Define the GMT+5:30 offset time
-        offset = timedelta(hours=5, minutes=30)
-        # Add the offset to the UTC datetime
-        gmt_datetime = utc_datetime + offset
-        # Return the ISO formatted string of the GMT+5:30 datetime
-        return gmt_datetime.isoformat()
-
-    @staticmethod
-    def current_isotimestamp() -> str:
-        return datetime.now().isoformat() + "Z"
-
-    @staticmethod
-    def handle_tags_and_tag_mappings(
-        db: Database, tags: list[dict[str, str]], media_id: str
-    ):
-        """
-        Try to add tag into table, get PK, or if it exists just get PK.
-        Then add media_id to tag_id mapping based on the 2nd param.
-        """
-        datalayer = DataLayer(db)
-        for tag in tags:
-            try:  # Try to insert row get PK.
-                tag_id = db["tags"].insert(tag, hash_id="id").last_pk
-            except IntegrityError:  # Except if it already exists, just get PK.
-                search_result = datalayer.search_on_table(
-                    "tags", "name", tag["name"], "id"
-                )
-                tag_id: str = search_result
-
-            tag_mapping_row = {"media_id": media_id, "tag_id": tag_id}
-
-            db["tag_mappings"].insert(tag_mapping_row, hash_id="id", ignore=True)
-
-
 class Scrobbles:
     def __init__(self, db: Database, api: API):
         self.db = db
@@ -338,3 +300,42 @@ class Scrobbles:
         }
 
         self.db["scrobbles"].insert(scrobble_row, hash_id="id", ignore=True)
+
+
+class Commons:
+    @staticmethod
+    def isotimestamp_from_unixtimestamp(ts: str) -> str:
+        # Get the UTC datetime from the unix timestamp
+        utc_datetime = datetime.utcfromtimestamp(int(ts))
+        # Define the GMT+5:30 offset time
+        offset = timedelta(hours=5, minutes=30)
+        # Add the offset to the UTC datetime
+        gmt_datetime = utc_datetime + offset
+        # Return the ISO formatted string of the GMT+5:30 datetime
+        return gmt_datetime.isoformat()
+
+    @staticmethod
+    def current_isotimestamp() -> str:
+        return datetime.now().isoformat() + "Z"
+
+    @staticmethod
+    def handle_tags_and_tag_mappings(
+        db: Database, tags: list[dict[str, str]], media_id: str
+    ):
+        """
+        Try to add tag into table, get PK, or if it exists just get PK.
+        Then add media_id to tag_id mapping based on the 2nd param.
+        """
+        datalayer = DataLayer(db)
+        for tag in tags:
+            try:  # Try to insert row get PK.
+                tag_id = db["tags"].insert(tag, hash_id="id").last_pk
+            except IntegrityError:  # Except if it already exists, just get PK.
+                search_result = datalayer.search_on_table(
+                    "tags", "name", tag["name"], "id"
+                )
+                tag_id: str = search_result
+
+            tag_mapping_row = {"media_id": media_id, "tag_id": tag_id}
+
+            db["tag_mappings"].insert(tag_mapping_row, hash_id="id", ignore=True)
