@@ -1,4 +1,5 @@
-from typing import Callable
+from typing import Callable, Optional
+
 from sqlite_utils import Database
 
 
@@ -32,7 +33,10 @@ class Datastore:
 
     def assert_tables(self) -> bool:
         return all(
-            [True if table in self.db.table_names() else False for table in self.required_tables]
+            [
+                True if table in self.db.table_names() else False
+                for table in self.required_tables
+            ]
         )
 
     def create_tables(self) -> None:
@@ -61,11 +65,11 @@ class Datastore:
                 "listeners": str,  # total listeners
                 "playcount": str,  # total plays
                 "last_updated": str,  # timestamp when updated
-                "is_loved": bool  # bool to denote if track is loved or not
+                "is_loved": bool,  # bool to denote if track is loved or not
             },
             pk="id",
             not_null={"media_id", "listeners", "playcount"},
-            defaults={"is_loved": False}
+            defaults={"is_loved": False},
         )
 
         self.db.add_foreign_keys(
@@ -112,7 +116,7 @@ class Datastore:
     def create_similar_artists_tmp(self):
         # To be processed. At this point similar artists might not exist in the db,
         # and if we try to recursively poll the data it might go on for a long time.
-        # Instead we store all the similarity data in a tmp db and later process
+        # Instead, we store all the similarity data in a tmp db and later process
         # this into another db.
         self.db["similar_artists_tmp"].create(  # type: ignore
             {
@@ -181,7 +185,7 @@ class Datastore:
                 "mbid": str,
                 "duration": str,
                 "bio": str,
-                "artist_id": str
+                "artist_id": str,
             },
             pk="id",
             not_null={"name", "url", "artist_id"},
@@ -208,3 +212,29 @@ class Datastore:
                 ("scrobbles", "artist_id", "artists", "id"),
             ]
         )
+
+
+class DataLayer:
+    def __init__(
+        self,
+        db: Database,
+    ):
+        self.db = db
+
+    def search_on_table(
+        self, table: str, search_column: str, search_value: str, result_column: str
+    ) -> Optional[str]:
+        query = f"select {result_column} from {table} where {search_column} = ?"
+        cursor = self.db.execute(query, [search_value])
+        results = cursor.fetchall()
+        cursor.close()
+
+        if results:
+            if len(results) > 1:
+                # TODO Possible issue ?
+                print(
+                    f"Multiple results found with the same value : {table}, {search_column}, {search_value}"
+                )
+            return results[0][0]
+        else:
+            return None

@@ -6,12 +6,14 @@ from sqlite_utils import Database
 
 from api import API
 from dataclass import Artist, StatsRow, Track, Album, Scrobble
-from support import dict_fetch, search_on_db
+from support import dict_fetch
+from sql_helpers import DataLayer
 
 
 class Artists:
     def __init__(self, db: Database):
         self.db = db
+        self.datalayer = DataLayer(self.db)
 
     def get_all_artists_dict(self) -> list[dict[Any, list[Any]]]:
         """
@@ -33,7 +35,9 @@ class Artists:
     def handle_artist(self, artist: Artist) -> str:
         # Returns artist_id, from artists table.
         # Check that artist is not already in db.
-        search_result = search_on_db(self.db, "artists", "name", artist["name"], "id")
+        search_result = self.datalayer.search_on_table(
+            "artists", "name", artist["name"], "id"
+        )
         if search_result:
             return search_result
 
@@ -79,11 +83,14 @@ class Tracks:
     def __init__(self, db: Database, api: API):
         self.db = db
         self.api = api
+        self.datalayer = DataLayer(self.db)
 
     def handle_track(self, track: Track, track_is_loved: int) -> str:
         # Returns track_id, from tracks table.
         # Check that track is not already in db.
-        search_result = search_on_db(self.db, "tracks", "name", track["name"], "id")
+        search_result = self.datalayer.search_on_table(
+            "tracks", "name", track["name"], "id"
+        )
         if search_result:
             return search_result
 
@@ -137,6 +144,7 @@ class Albums:
     def __init__(self, db: Database, api: API):
         self.db = db
         self.api = api
+        self.datalayer = DataLayer(self.db)
 
     def handle_album(self, album: Album) -> str:
         # Handles the album's entire data, and returns the album_id from the db.
@@ -145,7 +153,9 @@ class Albums:
         tracks_obj = Tracks(self.db, self.api)
 
         for track in dict_fetch(album, "tracks", "track"):
-            search_result = search_on_db(self.db, "tracks", "name", track["name"], "id")
+            search_result = self.datalayer.search_on_table(
+                "tracks", "name", track["name"], "id"
+            )
             if search_result:
                 track_id = search_result
             else:
@@ -169,7 +179,9 @@ class Albums:
 
     def handle_album_without_track_mappings(self, album: Album) -> str:
         # Handles the album's core data, and returns the album_id from the db.
-        search_result = search_on_db(self.db, "albums", "name", album["name"], "id")
+        search_result = self.datalayer.search_on_table(
+            "albums", "name", album["name"], "id"
+        )
         if search_result:
             return search_result
 
@@ -235,11 +247,14 @@ class Commons:
         Try to add tag into table, get PK, or if it exists just get PK.
         Then add media_id to tag_id mapping based on the 2nd param.
         """
+        datalayer = DataLayer(db)
         for tag in tags:
             try:  # Try to insert row get PK.
                 tag_id = db["tags"].insert(tag, hash_id="id").last_pk
             except IntegrityError:  # Except if it already exists, just get PK.
-                search_result = search_on_db(db, "tags", "name", tag["name"], "id")
+                search_result = datalayer.search_on_table(
+                    "tags", "name", tag["name"], "id"
+                )
                 tag_id: str = search_result
 
             tag_mapping_row = {"media_id": media_id, "tag_id": tag_id}
@@ -251,6 +266,7 @@ class Scrobbles:
     def __init__(self, db: Database, api: API):
         self.db = db
         self.api = api
+        self.datalayer = DataLayer(self.db)
 
     def handle_scrobble(self, scrobble: Scrobble) -> None:
         artist = Artists(self.db)
