@@ -185,6 +185,34 @@ class Albums:
         self.api = api
         self.datalayer = DataLayer(self.db)
 
+    def get_or_create_album_id(
+        self, artist_name: str, album_name: str, album_mbid: str
+    ) -> str:
+        """
+        Given an album_name OR album_mbid, the method first checks if the name or mbid exists in the db,
+        If found it returns the found id.
+        Else it polls the last.fm api to fetch the album data,
+        ingests into db, and returns the pk.
+        If API returns invalid data, throws `InvalidAPIResponseException`.
+        """
+        if valid(album_name) and valid(
+            a_id := self.datalayer.search_on_table("albums", "name", album_name, "id")
+        ):
+            album_id = a_id
+        elif valid(album_mbid) and valid(
+            a_id := self.datalayer.search_on_table("albums", "mbid", album_mbid, "id")
+        ):
+            album_id = a_id
+        else:
+            album_data = self.api.get_album_data(
+                artist_name, album_name, mbid=album_mbid
+            )
+            if valid_response(album_data):
+                album_id = self.handle_album(album_data["album"])
+            else:
+                raise InvalidAPIResponseException("API returned invalid data.")
+        return album_id
+
     def handle_album(self, album: Album) -> str:
         # Handles the album's entire data, and returns the album_id from the db.
         # Also adds the album : track mappings.
