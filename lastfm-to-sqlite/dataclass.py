@@ -16,7 +16,7 @@ class StatsRow(TypedDict):
     playcount: str
     media_id: str
     last_updated: str  # Timestamp should be in this format : 2018-03-18T15:52:10.000Z
-
+    is_loved: int
 
 class BareArtist(TypedDict):
     name: str

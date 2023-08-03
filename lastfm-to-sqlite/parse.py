@@ -89,15 +89,9 @@ class Artists:
             )
 
         # Write stats.
-        stats = artist["stats"]
-        stats_row: StatsRow = {
-            "media_id": artist_id,
-            "listeners": dict_fetch(stats, "listeners"),
-            "playcount": dict_fetch(stats, "playcount"),
-            "last_updated": Commons().current_isotimestamp(),
-        }
-
-        self.db["stats"].insert(stats_row, hash_id="id", ignore=True)
+        listeners = dict_fetch(artist, "stats", "listeners")
+        playcount = dict_fetch(artist, "stats", "playcount")
+        Commons().handle_stats(self.db, artist_id, listeners, playcount)
 
         tags = dict_fetch(artist, "tags", "tag")
         # tags is a list of dict, where each dict has name and url keys.
@@ -149,14 +143,9 @@ class Tracks:
         track_id: str = self.db["tracks"].insert(track_row, hash_id="id").last_pk
 
         # Write stats.
-        stats_row = {
-            "media_id": track_id,
-            "listeners": dict_fetch(track, "listeners"),
-            "playcount": dict_fetch(track, "playcount"),
-            "is_loved": track_is_loved,
-            "last_updated": Commons().current_isotimestamp(),
-        }
-        self.db["stats"].insert(stats_row, hash_id="id", ignore=True)
+        listeners = dict_fetch(track, "listeners")
+        playcount = dict_fetch(track, "playcount")
+        Commons().handle_stats(self.db, track_id, listeners, playcount, track_is_loved)
 
         # Write tags.
         tags = dict_fetch(track, "toptags", "tag")
@@ -234,13 +223,9 @@ class Albums:
         album_id: str = self.db["albums"].insert(album_row, hash_id="id").last_pk
 
         # Write stats.
-        stats_row: StatsRow = {
-            "media_id": album_id,
-            "listeners": dict_fetch(album, "listeners"),
-            "playcount": dict_fetch(album, "playcount"),
-            "last_updated": Commons().current_isotimestamp(),
-        }
-        self.db["stats"].insert(stats_row, hash_id="id", ignore=True)
+        listeners = dict_fetch(album, "listeners")
+        playcount = dict_fetch(album, "playcount")
+        Commons().handle_stats(self.db, album_id, listeners, playcount)
 
         # Write tags.
         tags = dict_fetch(album, "tags", "tag")
@@ -339,3 +324,21 @@ class Commons:
             tag_mapping_row = {"media_id": media_id, "tag_id": tag_id}
 
             db["tag_mappings"].insert(tag_mapping_row, hash_id="id", ignore=True)
+
+    @staticmethod
+    def handle_stats(
+        db: Database, media_id: str, listeners: str, playcount: str, is_loved: int = 0
+    ):
+        """
+        Try to add tag into table, get PK, or if it exists just get PK.
+        Then add media_id to tag_id mapping based on the 2nd param.
+        """
+        stats_row: StatsRow = {
+            "media_id": media_id,
+            "listeners": listeners,
+            "playcount": playcount,
+            "is_loved": is_loved,
+            "last_updated": Commons().current_isotimestamp(),
+        }
+        db["stats"].insert(stats_row, hash_id="id", ignore=True)
+        # TODO Would an upsert be a better fit here ?
