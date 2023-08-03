@@ -105,6 +105,30 @@ class Tracks:
         self.api = api
         self.datalayer = DataLayer(self.db)
 
+    def get_or_create_track_id(self, artist_name: str, track_name: str, track_mbid: str) -> str:
+        """
+        Given a track_name OR track_mbid, the method first checks if the name or mbid exists in the db,
+        If found it returns the found id.
+        Else it polls the last.fm api to fetch the track data,
+        ingests into db, and returns the pk.
+        If API returns invalid data, throws `InvalidAPIResponseException`.
+        """
+        if valid(track_name) and valid(
+            t_id := self.datalayer.search_on_table("tracks", "name", track_name, "id")
+        ):
+            track_id = t_id
+        elif valid(track_mbid) and valid(
+            t_id := self.datalayer.search_on_table("tracks", "mbid", track_mbid, "id")
+        ):
+            track_id = t_id
+        else:
+            track_data = self.api.get_track_data(artist_name, track_name, mbid=track_mbid)
+            if valid_response(track_data):
+                track_id = self.handle_track(track_data["track"], track_is_loved=0)
+            else:
+                raise InvalidAPIResponseException("API returned invalid data.")
+        return track_id
+
     def handle_track(self, track: Track, track_is_loved: int) -> str:
         # Returns track_id, from tracks table.
         # Check that track is not already in db.
@@ -267,10 +291,10 @@ class Scrobbles:
         )
 
         _ = dict_fetch(scrobble, "loved")
-        if _ == "":
-            track_is_loved = 0
-        else:
+        if valid(_):
             track_is_loved = int(_)
+        else:
+            track_is_loved = 0
 
         track_data = self.api.get_track_data(artist_name, track_name, mbid=track_mbid)
         track_id = track.handle_track(track_data["track"], track_is_loved)
