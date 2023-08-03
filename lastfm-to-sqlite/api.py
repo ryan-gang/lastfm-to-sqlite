@@ -5,7 +5,7 @@ from typing import Any, Optional
 import requests
 
 from exceptions import InvalidAPIResponseException
-from support import valid
+from support import valid, valid_response
 
 HOST_NAME = r"https://ws.audioscrobbler.com/2.0/"
 MAXSIZE = 1000
@@ -55,12 +55,14 @@ class API:
         _format = "json"
         _method = "artist.getInfo"
 
-        if mbid is None or mbid == "":
-            if artist_name == "":
-                raise RuntimeError("mbid and artist_name both not found.")
+        if valid(artist_name):
             URL = f"{HOST_NAME}?api_key={self.API_KEY}&format={_format}&method={_method}&artist={artist_name}"
-        else:
+        elif valid(mbid):
             URL = f"{HOST_NAME}?api_key={self.API_KEY}&format={_format}&method={_method}&mbid={mbid}"
+        else:
+            raise RuntimeError(
+                f"Couldn't fetch artist_data with mbid: {mbid} and artist_name : {artist_name}."
+            )
 
         return self.get_resource(URL)
 
@@ -70,13 +72,17 @@ class API:
         _format = "json"
         _method = "album.getInfo"
 
-        if mbid is None or mbid == "":
+        if valid(artist_name) and valid(album_name):
             URL = (
                 f"{HOST_NAME}?api_key={self.API_KEY}&format={_format}&method={_method}&artist={artist_name}"
                 f"&album={album_name}"
             )
-        else:
+        elif valid(mbid):
             URL = f"{HOST_NAME}?api_key={self.API_KEY}&format={_format}&method={_method}&mbid={mbid}"
+        else:
+            raise RuntimeError(
+                f"Couldn't fetch album_data with artist_name : {artist_name}, album_name : {album_name} and mbid: {mbid}."
+            )
 
         return self.get_resource(URL)
 
@@ -88,17 +94,16 @@ class API:
 
         if valid(mbid):
             URL = f"{HOST_NAME}?api_key={self.API_KEY}&format={_format}&method={_method}&mbid={mbid}"
-            out = self.get_resource(URL)
-            if "error" not in out:
-                return out
-
-        if valid(artist_name) and valid(track_name):
+            if valid_response(response := self.get_resource(URL)):
+                return response
+        elif valid(artist_name) and valid(track_name):
             URL = (
                 f"{HOST_NAME}?api_key={self.API_KEY}&format={_format}&method={_method}&artist={artist_name}"
                 f"&track={track_name}"
             )
-            out = self.get_resource(URL)
-            if "error" not in out:
-                return out
-
-        return {}
+            if valid_response(response := self.get_resource(URL)):
+                return response
+        else:
+            raise RuntimeError(
+                f"Couldn't fetch track_data with artist_name : {artist_name}, track_name : {track_name} and mbid: {mbid}."
+            )
