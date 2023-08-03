@@ -8,7 +8,7 @@ from api import API
 from dataclass import Artist, StatsRow, Track, Album, Scrobble
 from exceptions import InvalidAPIResponseException
 from sql_helpers import DataLayer
-from support import dict_fetch, valid, valid_response
+from support import dict_fetch, valid, valid_response, safe_int
 
 
 class Artists:
@@ -105,7 +105,13 @@ class Tracks:
         self.api = api
         self.datalayer = DataLayer(self.db)
 
-    def get_or_create_track_id(self, artist_name: str, track_name: str, track_mbid: str) -> str:
+    def get_or_create_track_id(
+        self,
+        artist_name: str,
+        track_name: str,
+        track_mbid: str,
+        track_is_loved: int = 0,
+    ) -> str:
         """
         Given a track_name OR track_mbid, the method first checks if the name or mbid exists in the db,
         If found it returns the found id.
@@ -122,9 +128,11 @@ class Tracks:
         ):
             track_id = t_id
         else:
-            track_data = self.api.get_track_data(artist_name, track_name, mbid=track_mbid)
+            track_data = self.api.get_track_data(
+                artist_name, track_name, mbid=track_mbid
+            )
             if valid_response(track_data):
-                track_id = self.handle_track(track_data["track"], track_is_loved=0)
+                track_id = self.handle_track(track_data["track"], track_is_loved)
             else:
                 raise InvalidAPIResponseException("API returned invalid data.")
         return track_id
@@ -141,17 +149,10 @@ class Tracks:
         # Get artist_id
         artist_obj = Artists(self.db, self.api)
 
-        d_artists_mbid, d_artists_name = artist_obj.get_all_artists_dict()
         artist_mbid, artist_name = dict_fetch(track, "artist", "mbid"), dict_fetch(
             track, "artist", "name"
         )
-        if artist_mbid in d_artists_mbid:
-            artist_id, _name, _url, _mbid = d_artists_mbid[artist_mbid]
-        elif artist_name in d_artists_name:
-            artist_id, _name, _url, _mbid = d_artists_name[artist_name]
-        else:
-            artist_data = self.api.get_artist_data(artist_name)
-            artist_id = artist_obj.handle_artist(artist_data["artist"])
+        artist_id = artist_obj.get_or_create_artist_id(artist_name, artist_mbid)
 
         # Write TrackRow first.
         track_row = {
@@ -255,13 +256,8 @@ class Albums:
         # Get artist_id
         artist_obj = Artists(self.db, self.api)
 
-        _, d_artists_name = artist_obj.get_all_artists_dict()
         artist_name = dict_fetch(album, "artist")
-        if artist_name in d_artists_name:
-            artist_id, _name, _url, _mbid = d_artists_name[artist_name]
-        else:
-            artist_data = self.api.get_artist_data(artist_name)
-            artist_id = artist_obj.handle_artist(artist_data["artist"])
+        artist_id = artist_obj.get_or_create_artist_id(artist_name, "")
 
         # Write TrackRow first.
         album_row = {
@@ -309,8 +305,7 @@ class Scrobbles:
         album_name, album_mbid = dict_fetch(scrobble, "album", "#text"), dict_fetch(
             scrobble, "album", "mbid"
         )
-        album_data = self.api.get_album_data(artist_name, album_name, mbid=album_mbid)
-        album_id = album.handle_album(album_data["album"])
+        album_id = album.get_or_create_album_id(artist_name, album_name, album_mbid)
 
         track_name, track_url, track_mbid = (
             dict_fetch(scrobble, "name"),
@@ -318,14 +313,13 @@ class Scrobbles:
             dict_fetch(scrobble, "mbid"),
         )
 
-        _ = dict_fetch(scrobble, "loved")
-        if valid(_):
-            track_is_loved = int(_)
-        else:
-            track_is_loved = 0
-
-        track_data = self.api.get_track_data(artist_name, track_name, mbid=track_mbid)
-        track_id = track.handle_track(track_data["track"], track_is_loved)
+        track_is_loved = safe_int(dict_fetch(scrobble, "loved"))
+        track_id = track.get_or_create_track_id(
+            artist_name,
+            track_name,
+            track_mbid,
+            track_is_loved,
+        )
 
         timestamp = Commons().isotimestamp_from_unixtimestamp(scrobble["date"]["uts"])
 
@@ -336,7 +330,7 @@ class Scrobbles:
             "timestamp": timestamp,
         }
 
-        self.db["scrobbles"].insert(scrobble_row, hash_id="id", ignore=True)
+        self.db["scrobbles"].insert(scrobble_row, hash_id="id")
 
 
 class Commons:
