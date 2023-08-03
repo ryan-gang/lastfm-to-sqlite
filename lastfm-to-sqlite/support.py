@@ -1,5 +1,4 @@
 from typing import Any, Optional
-from sqlite_utils import Database
 
 
 def dict_fetch(data: dict[Any, Any], *args: str) -> Any:
@@ -18,3 +17,7 @@ def valid(parameter: Optional[str]) -> bool:
     # Check that a parameter is valid.
     return (parameter is not None) and (parameter != "") and (parameter != "None")
 
+
+def valid_response(response: Any) -> bool:
+    # Check that a parameter is valid.
+    return "error" not in response

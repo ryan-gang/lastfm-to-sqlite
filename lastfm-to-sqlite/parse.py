@@ -6,14 +6,39 @@ from sqlite_utils import Database
 
 from api import API
 from dataclass import Artist, StatsRow, Track, Album, Scrobble
-from support import dict_fetch
+from exceptions import InvalidAPIResponseException
 from sql_helpers import DataLayer
+from support import dict_fetch, valid, valid_response
 
 
 class Artists:
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, api: API):
         self.db = db
+        self.api = api
         self.datalayer = DataLayer(self.db)
+
+    def get_or_create_artist_id(self, artist_name: str, artist_mbid: str) -> str:
+        """
+        Given an artist_name OR artist_mbid, the method first checks if the name or mbid exists in the db,
+        If found it returns the found id.
+        Else it polls the last.fm api to fetch the artist data,
+        ingests into db, and returns the pk.
+        """
+        if valid(artist_name) and valid(
+            a_id := self.datalayer.search_on_table("artists", "name", artist_name, "id")
+        ):
+            artist_id = a_id
+        elif valid(artist_mbid) and valid(
+            a_id := self.datalayer.search_on_table("artists", "mbid", artist_mbid, "id")
+        ):
+            artist_id = a_id
+        else:
+            artist_data = self.api.get_artist_data(artist_name, mbid=artist_mbid)
+            if valid_response(artist_data):
+                artist_id = self.handle_artist(artist_data["artist"])
+            else:
+                raise InvalidAPIResponseException("API returned invalid data.")
+        return artist_id
 
     def get_all_artists_dict(self) -> list[dict[Any, list[Any]]]:
         """
@@ -95,7 +120,7 @@ class Tracks:
             return search_result
 
         # Get artist_id
-        artist_obj = Artists(self.db)
+        artist_obj = Artists(self.db, self.api)
 
         d_artists_mbid, d_artists_name = artist_obj.get_all_artists_dict()
         artist_mbid, artist_name = dict_fetch(track, "artist", "mbid"), dict_fetch(
@@ -186,7 +211,7 @@ class Albums:
             return search_result
 
         # Get artist_id
-        artist_obj = Artists(self.db)
+        artist_obj = Artists(self.db, self.api)
 
         _, d_artists_name = artist_obj.get_all_artists_dict()
         artist_name = dict_fetch(album, "artist")
@@ -269,7 +294,7 @@ class Scrobbles:
         self.datalayer = DataLayer(self.db)
 
     def handle_scrobble(self, scrobble: Scrobble) -> None:
-        artist = Artists(self.db)
+        artist = Artists(self.db, self.api)
         album = Albums(self.db, self.api)
         track = Tracks(self.db, self.api)
 
@@ -280,9 +305,8 @@ class Scrobbles:
             dict_fetch(scrobble, "artist", "url"),
             dict_fetch(scrobble, "artist", "mbid"),
         )
-        artist_data = self.api.get_artist_data(artist_name, mbid=artist_mbid)
-        artist_id = artist.handle_artist(artist_data["artist"])
 
+        artist_id = artist.get_or_create_artist_id(artist_name, artist_mbid)
         album_name, album_mbid = dict_fetch(scrobble, "album", "#text"), dict_fetch(
             scrobble, "album", "mbid"
         )
