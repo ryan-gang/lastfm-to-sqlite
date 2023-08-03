@@ -293,35 +293,34 @@ class Scrobbles:
         album = Albums(self.db, self.api)
         track = Tracks(self.db, self.api)
 
-        # TODO add search_on_db before all api calls
-
         artist_name, artist_url, artist_mbid = (
             dict_fetch(scrobble, "artist", "name"),
             dict_fetch(scrobble, "artist", "url"),
             dict_fetch(scrobble, "artist", "mbid"),
         )
-
-        artist_id = artist.get_or_create_artist_id(artist_name, artist_mbid)
         album_name, album_mbid = dict_fetch(scrobble, "album", "#text"), dict_fetch(
             scrobble, "album", "mbid"
         )
-        album_id = album.get_or_create_album_id(artist_name, album_name, album_mbid)
-
         track_name, track_url, track_mbid = (
             dict_fetch(scrobble, "name"),
             dict_fetch(scrobble, "url"),
             dict_fetch(scrobble, "mbid"),
         )
-
         track_is_loved = safe_int(dict_fetch(scrobble, "loved"))
-        track_id = track.get_or_create_track_id(
-            artist_name,
-            track_name,
-            track_mbid,
-            track_is_loved,
-        )
-
         timestamp = Commons().isotimestamp_from_unixtimestamp(scrobble["date"]["uts"])
+
+        try:
+            artist_id = artist.get_or_create_artist_id(artist_name, artist_mbid)
+            album_id = album.get_or_create_album_id(artist_name, album_name, album_mbid)
+            track_id = track.get_or_create_track_id(
+                artist_name,
+                track_name,
+                track_mbid,
+                track_is_loved,
+            )
+        except InvalidAPIResponseException as E:
+            print(E)
+            return
 
         scrobble_row = {
             "album_id": album_id,
