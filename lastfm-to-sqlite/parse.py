@@ -23,7 +23,7 @@ class Artists:
         If found it returns the found id.
         Else it polls the last.fm api to fetch the artist data,
         ingests into db, and returns the pk.
-        If API returns invalid data, throws `InvalidAPIResponseException`.
+        If the API returns invalid data, throws `InvalidAPIResponseException`.
         """
         if valid(artist_name) and valid(
             a_id := self.datalayer.search_on_table("artists", "name", artist_name, "id")
@@ -59,8 +59,8 @@ class Artists:
         return [d_artists_mbid, d_artists_name]
 
     def handle_artist(self, artist: Artist) -> str:
-        # Returns artist_id, from artists table.
-        # Check that artist is not already in db.
+        # Returns artist_id, from artists' table.
+        # Check that artist is not yet in db.
         search_result = self.datalayer.search_on_table(
             "artists", "name", artist["name"], "id"
         )
@@ -117,7 +117,7 @@ class Tracks:
         If found it returns the found id.
         Else it polls the last.fm api to fetch the track data,
         ingests into db, and returns the pk.
-        If API returns invalid data, throws `InvalidAPIResponseException`.
+        If the API returns invalid data, throws `InvalidAPIResponseException`.
         """
         if valid(track_name) and valid(
             t_id := self.datalayer.search_on_table("tracks", "name", track_name, "id")
@@ -138,8 +138,8 @@ class Tracks:
         return track_id
 
     def handle_track(self, track: Track, track_is_loved: int) -> str:
-        # Returns track_id, from tracks table.
-        # Check that track is not already in db.
+        # Returns track_id, from tracks' table.
+        # Check that track is not yet in db.
         search_result = self.datalayer.search_on_table(
             "tracks", "name", track["name"], "id"
         )
@@ -194,7 +194,7 @@ class Albums:
         If found it returns the found id.
         Else it polls the last.fm api to fetch the album data,
         ingests into db, and returns the pk.
-        If API returns invalid data, throws `InvalidAPIResponseException`.
+        If the API returns invalid data, throws `InvalidAPIResponseException`.
         """
         if valid(album_name) and valid(
             a_id := self.datalayer.search_on_table("albums", "name", album_name, "id")
@@ -216,11 +216,14 @@ class Albums:
 
     def handle_album(self, album: Album) -> str:
         # Handles the album's entire data, and returns the album_id from the db.
-        # Also adds the album : track mappings.
+        # Also adds the album: track mappings.
         album_id = self.handle_album_without_track_mappings(album)
         tracks_obj = Tracks(self.db, self.api)
+        tracks = dict_fetch(album, "tracks", "track")
+        if type(tracks) == dict:  # Single track on this album, so we can't iterate
+            tracks = [tracks]  # Now we can iterate as usual
 
-        for track in dict_fetch(album, "tracks", "track"):
+        for track in tracks:
             search_result = self.datalayer.search_on_table(
                 "tracks", "name", track["name"], "id"
             )
@@ -230,13 +233,7 @@ class Albums:
                 track_name, artist_name = dict_fetch(track, "name"), dict_fetch(
                     track, "artist", "name"
                 )
-                track_data = self.api.get_track_data(artist_name, track_name)
-                if "error" in track_data:  # TODO Add proper handling of api failure
-                    print(track_data)
-                    continue
-                track_id = tracks_obj.handle_track(
-                    track_data["track"], track_is_loved=0
-                )
+                track_id = tracks_obj.get_or_create_track_id(artist_name, track_name, "", 0)
 
             mapping_row = {"album_id": album_id, "track_id": track_id}
             self.db["album_track_mappings"].insert(
@@ -294,11 +291,14 @@ class Scrobbles:
         track = Tracks(self.db, self.api)
 
         artist_name, artist_url, artist_mbid = (
-            dict_fetch(scrobble, "artist", "name"),
+            (dict_fetch(scrobble, "artist", "name") or dict_fetch(scrobble, "artist", "#text")),
+            # In this case, if the first entry is not valid, it would take the second entry.
+            # But if both are valid, the first one takes precedence.
             dict_fetch(scrobble, "artist", "url"),
             dict_fetch(scrobble, "artist", "mbid"),
         )
-        album_name, album_mbid = dict_fetch(scrobble, "album", "#text"), dict_fetch(
+        album_name, album_mbid = (
+                    dict_fetch(scrobble, "album", "name") or dict_fetch(scrobble, "album", "#text")), dict_fetch(
             scrobble, "album", "mbid"
         )
         track_name, track_url, track_mbid = (
@@ -351,14 +351,19 @@ class Commons:
     @staticmethod
     def handle_tags_and_tag_mappings(
         db: Database, tags: list[dict[str, str]], media_id: str
-    ):
+    ) -> None:
         """
-        Try to add tag into table, get PK, or if it exists just get PK.
+        Try to add tag into table, get PK, or if it exists, just get PK.
         Then add media_id to tag_id mapping based on the 2nd param.
         """
         datalayer = DataLayer(db)
+        if not valid(tags):
+            print(f"SOFT ERROR : Invalid data received, tags : {tags}")
+            return
+        if type(tags) == dict:  # Single tag on this media, so we can't iterate
+            tags = [tags]  # Now we can iterate as usual
         for tag in tags:
-            try:  # Try to insert row get PK.
+            try:  # Try to insert row to get PK.
                 tag_id = db["tags"].insert(tag, hash_id="id").last_pk
             except IntegrityError:  # Except if it already exists, just get PK.
                 search_result = datalayer.search_on_table(
@@ -375,7 +380,7 @@ class Commons:
         db: Database, media_id: str, listeners: str, playcount: str, is_loved: int = 0
     ):
         """
-        Try to add tag into table, get PK, or if it exists just get PK.
+        Try to add tag into table, get PK, or if it exists, just get PK.
         Then add media_id to tag_id mapping based on the 2nd param.
         """
         stats_row: StatsRow = {
