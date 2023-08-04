@@ -1,5 +1,6 @@
 import json
 import logging
+import urllib.parse
 from typing import Any, Optional
 
 import requests
@@ -43,6 +44,7 @@ class API:
     ):
         _format = "json"
         _method = "user.getRecentTracks"
+        user = urllib.parse.quote(user)
 
         URL = (
             f"{HOST_NAME}?api_key={self.API_KEY}&format={_format}&method={_method}&limit={maxsize}&user={user}"
@@ -56,8 +58,10 @@ class API:
         _method = "artist.getInfo"
 
         if valid(artist_name):
+            artist_name = urllib.parse.quote(artist_name)
             URL = f"{HOST_NAME}?api_key={self.API_KEY}&format={_format}&method={_method}&artist={artist_name}"
         elif valid(mbid):
+            mbid = urllib.parse.quote(mbid)
             URL = f"{HOST_NAME}?api_key={self.API_KEY}&format={_format}&method={_method}&mbid={mbid}"
         else:
             raise RuntimeError(
@@ -73,11 +77,14 @@ class API:
         _method = "album.getInfo"
 
         if valid(artist_name) and valid(album_name):
+            artist_name = urllib.parse.quote(artist_name)
+            album_name = urllib.parse.quote(album_name)
             URL = (
                 f"{HOST_NAME}?api_key={self.API_KEY}&format={_format}&method={_method}&artist={artist_name}"
                 f"&album={album_name}"
             )
         elif valid(mbid):
+            mbid = urllib.parse.quote(mbid)
             URL = f"{HOST_NAME}?api_key={self.API_KEY}&format={_format}&method={_method}&mbid={mbid}"
         else:
             raise RuntimeError(
@@ -92,15 +99,18 @@ class API:
         _format = "json"
         _method = "track.getInfo"
 
-        if valid(mbid):
-            URL = f"{HOST_NAME}?api_key={self.API_KEY}&format={_format}&method={_method}&mbid={mbid}"
-            if valid_response(response := self.get_resource(URL)):
-                return response
-        elif valid(artist_name) and valid(track_name):
+        if valid(artist_name) and valid(track_name):
+            artist_name = urllib.parse.quote(artist_name)
+            track_name = urllib.parse.quote(track_name)
             URL = (
                 f"{HOST_NAME}?api_key={self.API_KEY}&format={_format}&method={_method}&artist={artist_name}"
                 f"&track={track_name}"
             )
+            if valid_response(response := self.get_resource(URL)):
+                return response
+        elif valid(mbid):
+            mbid = urllib.parse.quote(mbid)
+            URL = f"{HOST_NAME}?api_key={self.API_KEY}&format={_format}&method={_method}&mbid={mbid}"
             if valid_response(response := self.get_resource(URL)):
                 return response
         else:
